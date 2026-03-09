@@ -1,6 +1,7 @@
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.generics import ListAPIView
 
 from .models import Photo
 from .serializers import PhotoSerializer
@@ -15,8 +16,12 @@ def upload_photo(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-@api_view(['GET'])
-def list_photos(request):
-    photos = Photo.objects.all().order_by('-uploaded_at')
-    serializer = PhotoSerializer(photos, many=True)
-    return Response(serializer.data)
+# @api_view(['GET'])
+# def list_photos(request):
+#     photos = Photo.objects.all().order_by('-uploaded_at')
+#     serializer = PhotoSerializer(photos, many=True)
+#     return Response(serializer.data)
+
+class PhotoListView(ListAPIView):
+    queryset = Photo.objects.all().order_by('-uploaded_at')
+    serializer_class = PhotoSerializer
