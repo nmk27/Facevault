@@ -211,6 +211,8 @@ frontend/facevault/ios/
 frontend/facevault/linux/
 frontend/facevault/macos/
 frontend/facevault/windows/
+build/
+
 
 # Symbolication related
 app.*.symbols
