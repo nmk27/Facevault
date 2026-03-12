@@ -10,11 +10,17 @@ class Photo(models.Model):
         upload_to='thumbnails/', null=True, blank=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
+    width = models.IntegerField(null=True, blank=True)
+    height = models.IntegerField(null=True, blank=True)
+
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
 
         if self.image:
             img = Image.open(self.image.path)
+
+            self.width, self.height = img.size
+
             img = ImageOps.exif_transpose(img)  # Handle EXIF orientation
 
             img.thumbnail((300, 300))
