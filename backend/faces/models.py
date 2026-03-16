@@ -15,6 +15,7 @@ class Face(models.Model):
 
     face_image = models.ImageField(upload_to='faces/', null=True, blank=True)
     embedding = models.JSONField(null=True, blank=True)
+    person_id = models.IntegerField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
 
