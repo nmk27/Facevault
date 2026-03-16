@@ -14,6 +14,8 @@ from PIL import Image
 import io
 from django.core.files.base import ContentFile
 
+from ml.generate_embeddings import generate_embedding
+
 
 @api_view(['POST'])
 def upload_photo(request):
@@ -41,6 +43,8 @@ def upload_photo(request):
             face_file = ContentFile(
                 buffer.getvalue(), name=f'face_{serializer.instance.id}_{x}_{y}.jpg')
 
+            embedding = generate_embedding(cropped_face)
+
             Face.objects.create(
                 photo=serializer.instance,
                 x=x,
@@ -49,6 +53,7 @@ def upload_photo(request):
                 height=height,
                 confidence=confidence,
                 face_image=face_file,
+                embedding=embedding,
             )
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
