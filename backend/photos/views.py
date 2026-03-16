@@ -10,6 +10,10 @@ from ml.detect_faces import detect_faces
 from .models import Photo
 from .serializers import PhotoSerializer
 
+from PIL import Image
+import io
+from django.core.files.base import ContentFile
+
 
 @api_view(['POST'])
 def upload_photo(request):
@@ -19,6 +23,7 @@ def upload_photo(request):
 
         # Run face detection after saving the photo
         faces = detect_faces(serializer.instance.image.path)
+        image = Image.open(serializer.instance.image.path)
 
         for face in faces:
             x, y, width, height = face["box"]
@@ -27,6 +32,15 @@ def upload_photo(request):
             if confidence < 0.95:
                 continue
 
+            x = max(0, x)
+            y = max(0, y)
+            cropped_face = image.crop((x, y, x + width, y + height))
+
+            buffer = io.BytesIO()
+            cropped_face.save(buffer, format='JPEG')
+            face_file = ContentFile(
+                buffer.getvalue(), name=f'face_{serializer.instance.id}_{x}_{y}.jpg')
+
             Face.objects.create(
                 photo=serializer.instance,
                 x=x,
@@ -34,6 +48,7 @@ def upload_photo(request):
                 width=width,
                 height=height,
                 confidence=confidence,
+                face_image=face_file,
             )
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

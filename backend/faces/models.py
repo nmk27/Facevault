@@ -13,6 +13,8 @@ class Face(models.Model):
 
     confidence = models.FloatField()
 
+    face_image = models.ImageField(upload_to='faces/', null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
