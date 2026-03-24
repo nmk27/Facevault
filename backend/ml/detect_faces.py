@@ -1,19 +1,32 @@
+from PIL import Image
 from facenet_pytorch import MTCNN
 import os
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
-from PIL import Image
-import numpy as np
 
 detector = MTCNN()
 
 def detect_faces(image_path):
     image = Image.open(image_path).convert("RGB")
-    image_array = np.array(image)
 
-    faces = detector.detect_faces(image_array)
-    
+    boxes, probs = detector.detect(image)
+    if boxes is None or probs is None:
+        return []
+
+    faces = []
+    for box, confidence in zip(boxes, probs):
+        x1, y1, x2, y2 = box
+        faces.append({
+            "box": [
+                int(round(x1)),
+                int(round(y1)),
+                int(round(x2 - x1)),
+                int(round(y2 - y1)),
+            ],
+            "confidence": float(confidence),
+        })
+
     return faces
 
 
