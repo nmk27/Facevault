@@ -2,10 +2,11 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.generics import ListAPIView
+import logging
 
 from faces.models import Face
-from faces.models import Face
 from ml.detect_faces import detect_faces
+from ml.cluster_faces import cluster_faces
 
 from .models import Photo
 from .serializers import PhotoSerializer
@@ -15,6 +16,9 @@ import io
 from django.core.files.base import ContentFile
 
 from ml.generate_embeddings import generate_embedding
+
+
+logger = logging.getLogger(__name__)
 
 
 @api_view(['POST'])
@@ -55,6 +59,13 @@ def upload_photo(request):
                 face_image=face_file,
                 embedding=embedding,
             )
+
+        # Keep person_id labels up to date for all embedded faces.
+        try:
+            cluster_faces()
+        except Exception:
+            logger.exception("Face clustering failed after upload")
+
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
