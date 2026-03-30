@@ -4,10 +4,11 @@ Django REST backend for FaceVault. This service handles photo ingestion, media p
 
 ## Quick Context (For New Chat Sessions)
 
-- Backend role: receives uploads and runs the ML pipeline.
+- Backend role: receives uploads and runs the ML pipeline (detection, embedding, auto-clustering).
 - Main entrypoint: `POST /photos/upload/`.
 - Data model core: `Photo` and `Face`.
-- Face clustering logic exists (`ml/cluster_faces.py`) but is not wired into an API or scheduled workflow yet.
+- Face clustering: auto-runs after each upload using DBSCAN (cosine distance) and populates `person_id`.
+- People endpoints: `GET /faces/people/` and `GET /faces/people/<person_id>/` to retrieve grouped faces by identity.
 - Current environment is development-focused (debug enabled, open CORS, hardcoded DB credentials).
 
 ## Responsibilities
@@ -120,17 +121,33 @@ Root URL registration is in `facevault/urls.py`.
   - serialized `Photo`
 - Processing pipeline:
   1. Save photo via serializer.
-  2. Run `detect_faces(image_path)`.
+  2. Run face detection using MTCNN.
   3. Open source image and iterate detections.
   4. Skip detections where `confidence < 0.95`.
-  5. Crop each accepted face.
-  6. Generate embedding via `generate_embedding(cropped_face)`.
-  7. Create `Face` record with bbox, confidence, cropped image, embedding.
+  5. Crop each accepted face and generate embedding via `generate_embedding(cropped_face)`.
+  6. Create `Face` record with bbox, confidence, cropped image, embedding.
+  7. **Auto-run clustering** to update `person_id` for all embedded faces.
 
 ### `GET /faces/<photo_id>/`
 - View: `faces.views.get_faces`
-- Returns list of objects with:
-  - `x`, `y`, `width`, `height`, `confidence`
+- Returns list of faces detected in a specific photo with:
+  - `id`, `x`, `y`, `width`, `height`, `confidence`, `person_id`
+
+### `GET /faces/people/`
+- View: `faces.views.list_people`
+- Returns list of all unique people (identities) with face counts
+- Excludes noise faces (`person_id != -1`)
+- Response format: `[{person_id: int, face_count: int}, ...]`
+
+### `GET /faces/people/<person_id>/`
+- View: `faces.views.get_person_faces`
+- Returns all faces belonging to a specific person
+- Response includes full face metadata:
+  - face id, person_id, bbox (x, y, width, height)
+  - confidence, embedding metadata
+  - photo reference (id, image URL, thumbnail URL)
+  - face_image URL, created_at timestamp
+- Returns `404` if person_id has no faces
 
 ## ML Pipeline Details
 
@@ -139,8 +156,9 @@ Root URL registration is in `facevault/urls.py`.
 
 ### Face detection (`ml/detect_faces.py`)
 - Detector: `MTCNN()` from facenet-pytorch.
-- Input: PIL image converted to RGB and numpy array.
-- Output: list of detections containing `box` and `confidence`.
+- Input: PIL image converted to RGB.
+- Output: list of detections with `box` (x1, y1, x2, y2) and `confidence`.
+- Detections with confidence < 0.95 are filtered out in the upload view.
 
 ### Embeddings (`ml/generate_embeddings.py`)
 - Model: `InceptionResnetV1(pretrained='vggface2').eval()`.
@@ -152,15 +170,13 @@ Root URL registration is in `facevault/urls.py`.
   - 512-dimensional embedding as Python list (JSON serializable)
 
 ### Clustering (`ml/cluster_faces.py`)
-- Collects all faces with non-null embeddings.
-- Runs DBSCAN with:
-  - `eps=0.6`
-  - `min_samples=2`
-- Writes DBSCAN label to `Face.person_id`.
-
-Status:
-- Implemented as callable function.
-- Not integrated into API endpoints or automation yet.
+- **Auto-runs after every upload** to re-cluster all embedded faces and update `person_id`.
+- Algorithm: DBSCAN with **cosine distance metric** on **L2-normalized embeddings**.
+- Configurable via environment variables:
+  - `FACE_CLUSTER_EPS`: distance threshold (default `0.4`)
+  - `FACE_CLUSTER_MIN_SAMPLES`: minimum samples per cluster (default `2`)
+- Noise points are labeled with `person_id = -1` (outliers with insufficient similar neighbors).
+- Returns metadata: `faces_processed`, `clusters_assigned`, `noise_faces`, `eps`, `min_samples`.
 
 ## Development Commands
 
@@ -243,45 +259,53 @@ Backend default development URL:
 Implemented:
 - Photo model with thumbnail generation and metadata capture.
 - Face model with bbox, confidence, crop path, embedding, person_id.
-- Upload endpoint with integrated detection and embedding generation.
-- Photo list and per-photo faces retrieval endpoints.
+- Upload endpoint with integrated detection, embedding generation, and **auto-clustering**.
+- Photo list and per-photo face metadata retrieval endpoints.
+- **People endpoints**: list all identities, retrieve all faces for a specific person.
 - HEIC support registration.
-- Clustering function with DBSCAN.
+- **Improved clustering**: DBSCAN with cosine distance, configurable thresholds.
 - Dev reset command for fast clean-state iteration.
+- Automatic clustering after each upload; facial identity grouping.
 
 Not yet implemented:
-- People endpoints based on `person_id`.
-- Auto-triggered clustering workflow.
-- Background/async pipeline execution.
+- Manual clustering trigger endpoint (optional).
+- Background/async pipeline execution (currently synchronous).
 - Authentication and permissions.
 - Comprehensive test coverage.
+- Re-identification/re-embedding workflows.
 
 ## Known Risks and Caveats
 
-- Upload pipeline is synchronous and may be slow on large images or many faces.
-- Confidence threshold is hardcoded at `0.95`.
-- CORS currently allows all origins.
-- `DEBUG=True` in settings.
-- Database credentials are currently hardcoded.
-- No explicit image validation/retry safeguards around ML calls.
+- Upload pipeline is synchronous (blocks request while running ML inference).
+- Confidence threshold is hardcoded at `0.95` in upload view.
+- CORS currently allows all origins (`CORS_ALLOW_ALL_ORIGINS=True`).
+- `DEBUG=True` in settings (exception details exposed).
+- Database credentials are hardcoded in settings (use env vars for production).
+- No explicit image file size validation; large uploads can cause timeouts.
+- Clustering may mark valid faces as noise (`person_id=-1`) if insufficient similar samples exist.
+- No authentication/authorization; all endpoints are open.
 
 ## Backend Roadmap
 
-### Phase 1: Clustering Operations
-- Add management command to run clustering.
-- Optionally trigger clustering after upload (or on schedule).
+### Phase 1: Clustering Operations ✅
+- ✅ Improve clustering algorithm (cosine distance DBSCAN).
+- ✅ Auto-trigger clustering after upload.
+- ✅ Configurable clustering parameters via env vars.
 
-### Phase 2: People API
-- `GET /people/` to list identities.
-- `GET /people/<person_id>/` to fetch related faces/photos.
+### Phase 2: People API ✅
+- ✅ `GET /faces/people/` to list identities.
+- ✅ `GET /faces/people/<person_id>/` to fetch related faces/photos.
 
-### Phase 3: Hardening
+### Phase 3: Hardening (Upcoming)
 - Move secrets and DB config to env vars.
-- Restrict CORS and allowed hosts.
+- Restrict CORS and configure `ALLOWED_HOSTS`.
 - Add structured logging and better exception handling.
+- Add image file size/type validation.
 - Expand automated tests (API + pipeline + serializers).
 
-### Phase 4: Scale Path (Optional)
+### Phase 4: Optional Enhancements
+- Manual clustering trigger endpoint (`POST /faces/cluster/`).
 - Offload ML to async workers (Celery/Redis).
-- Add bulk/batch ingestion support.
-- Add re-embedding/re-clustering admin flows.
+- Bulk/batch ingestion support.
+- Re-embedding/re-clustering admin flows.
+- Search/filter endpoints for faces by confidence, date range, etc.
