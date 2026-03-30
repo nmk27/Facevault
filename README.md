@@ -303,6 +303,36 @@ For production, move sensitive and environment-specific values to environment va
 - Security and CORS restrictions
 - Optional async processing queue (Celery/Redis)
 
+## JavaScript Migration
+
+This project has been designed for migration to JavaScript. A comprehensive migration guide is available:
+
+**📋 [JavaScript Migration Prompt](./JAVASCRIPT_MIGRATION_PROMPT.md)**
+
+This prompt file contains:
+- Complete application architecture and functionality specification
+- Database schema with exact table structures
+- API endpoint definitions and request/response formats
+- Recommended JavaScript technology stack (React, Node.js, PostgreSQL)
+- ML pipeline implementation using face-api.js or TensorFlow.js
+- Step-by-step migration instructions
+- Code examples and component architectures
+- Security, performance, and deployment considerations
+
+The prompt is designed to be used by any AI model or development team to recreate the entire FaceVault application in JavaScript while maintaining all core functionality including:
+- Photo upload and infinite scroll gallery
+- Automatic face detection and embedding generation
+- Person clustering and identity management
+- Responsive Material Design UI with dark/light themes
+
+### Using the Migration Prompt
+
+1. **For AI Models**: Provide the `JAVASCRIPT_MIGRATION_PROMPT.md` file as context along with specific implementation requests
+2. **For Developers**: Use it as a comprehensive specification document for manual migration
+3. **For Teams**: Reference it as architecture documentation and implementation guide
+
+The original Flutter/Django implementation serves as the reference, while the JavaScript version provides broader compatibility and easier deployment options.
+
 ## Portfolio Summary
 
 FaceVault demonstrates practical full-stack + ML integration:
@@ -310,6 +340,7 @@ FaceVault demonstrates practical full-stack + ML integration:
 - Face representation learning with embeddings
 - Unsupervised clustering for identity grouping
 - API-first backend and Flutter frontend interaction
+- Comprehensive migration documentation for technology stack flexibility
 
-In short: a simplified Google Photos-style system with face detection and the foundation for person-level grouping.
+In short: a simplified Google Photos-style system with face detection and the foundation for person-level grouping, designed for easy migration to modern JavaScript frameworks.
 
