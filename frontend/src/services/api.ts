@@ -33,6 +33,7 @@ type BackendFace = {
         image: string | null
         thumbnail: string | null
     }
+    face_image?: string | null
 }
 
 type BackendPersonSummary = {
@@ -240,15 +241,50 @@ export async function getPeople(page = 1, pageSize = 20): Promise<Paginated<Pers
         const start = (page - 1) * pageSize
         const pageItems = sorted.slice(start, start + pageSize)
 
+        const enrichedItems = await Promise.all(
+            pageItems.map(async (person) => {
+                try {
+                    const faces = await requestJson<BackendFace[]>(`/faces/people/${person.person_id}/`)
+                    const coverFromFace = toAbsoluteMediaUrl(faces[0]?.face_image)
+                    const coverFromPhoto = toAbsoluteMediaUrl(
+                        faces[0]?.photo?.thumbnail ?? faces[0]?.photo?.image ?? null,
+                    )
+
+                    const sampleImageUrls = faces
+                        .slice(0, 4)
+                        .map((face) =>
+                            toAbsoluteMediaUrl(face.photo?.thumbnail ?? face.photo?.image ?? null),
+                        )
+                        .filter((url) => Boolean(url))
+
+                    const averageConfidence =
+                        faces.length > 0
+                            ? faces.reduce((sum, face) => sum + (face.confidence ?? 0), 0) / faces.length
+                            : 0
+
+                    return {
+                        id: String(person.person_id),
+                        name: `Person ${person.person_id}`,
+                        faceCount: person.face_count,
+                        averageConfidence,
+                        coverUrl: coverFromFace || coverFromPhoto,
+                        sampleImageUrls,
+                    }
+                } catch {
+                    return {
+                        id: String(person.person_id),
+                        name: `Person ${person.person_id}`,
+                        faceCount: person.face_count,
+                        averageConfidence: 0,
+                        coverUrl: '',
+                        sampleImageUrls: [],
+                    }
+                }
+            }),
+        )
+
         return {
-            items: pageItems.map((person) => ({
-                id: String(person.person_id),
-                name: `Person ${person.person_id}`,
-                faceCount: person.face_count,
-                averageConfidence: 0,
-                coverUrl: '',
-                sampleImageUrls: [],
-            })),
+            items: enrichedItems,
             nextPage: start + pageSize < sorted.length ? page + 1 : null,
         }
     } catch {
