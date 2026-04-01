@@ -31,16 +31,6 @@ export function PeoplePage() {
 
     return (
         <section className="rounded-2xl border border-slate-200 bg-gradient-to-b from-white to-slate-50/70 p-4 sm:p-5">
-            <div className="mb-4 flex items-center justify-between">
-                <div>
-                    <h2 className="text-base font-semibold tracking-tight text-slate-900">People</h2>
-                    <p className="text-xs text-slate-500">Grouped by detected identity</p>
-                </div>
-                <p className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
-                    {people.length} identities
-                </p>
-            </div>
-
             {peopleQuery.isError && (
                 <p className="mb-3 text-sm text-red-600">
                     Failed to fetch people from backend endpoint /faces/people/.

@@ -38,7 +38,7 @@ export function GalleryPage() {
     }
 
     return (
-        <div className="space-y-4">
+        <div className="space-y-4 sm:space-y-5">
             <UploadDropzone onUpload={handleUpload} />
 
             <section className="rounded-2xl border border-slate-200 bg-gradient-to-b from-white to-slate-50/70 p-4 sm:p-5">
