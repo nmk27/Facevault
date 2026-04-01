@@ -21,8 +21,7 @@ export function PhotoViewer({ photo, faces }: PhotoViewerProps) {
 
     return (
         <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-4">
-            <header className="flex items-center justify-between">
-                <h1 className="text-sm font-semibold text-slate-900">{photo.title}</h1>
+            <header className="flex items-center justify-end">
                 <p className="text-xs text-slate-500">{new Date(photo.createdAt).toLocaleString()}</p>
             </header>
 
@@ -34,7 +33,7 @@ export function PhotoViewer({ photo, faces }: PhotoViewerProps) {
                     <SmartImage
                         src={displaySrc}
                         fallbackSrc={photo.thumbnailUrl || photo.url}
-                        alt={photo.title}
+                        alt="Photo"
                         className="block max-h-[75vh] max-w-full"
                         style={{ imageOrientation: 'none' }}
                         onLoad={(event) => {
