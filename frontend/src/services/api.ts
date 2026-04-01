@@ -124,6 +124,13 @@ export async function getPhotos(page = 1, pageSize = PAGE_SIZE): Promise<Paginat
             nextPage: inferredNext,
         }
     } catch {
+        if (page > 1) {
+            return {
+                items: [],
+                nextPage: null,
+            }
+        }
+
         if (useMocks()) {
             return getMockPaged(MOCK_PHOTOS, page, pageSize)
         }
