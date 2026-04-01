@@ -30,9 +30,12 @@ export function PeoplePage() {
     }, [peopleQuery.fetchNextPage, peopleQuery.hasNextPage, peopleQuery.isFetchingNextPage])
 
     return (
-        <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+        <section className="rounded-2xl border border-slate-200 bg-gradient-to-b from-white to-slate-50/70 p-4 sm:p-5">
             <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-base font-semibold text-slate-900">People</h2>
+                <div>
+                    <h2 className="text-base font-semibold tracking-tight text-slate-900">People</h2>
+                    <p className="text-xs text-slate-500">Grouped by detected identity</p>
+                </div>
                 <p className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
                     {people.length} identities
                 </p>
