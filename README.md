@@ -38,6 +38,7 @@ If you are reading this in a fresh chat, this is the fastest way to understand t
 Current completion is approximately 60-70% toward a portfolio-ready "People clustering" product.
 
 Completed core milestones:
+
 - Backend photo upload and retrieval APIs
 - Face detection and cropped-face persistence
 - Embedding generation pipeline
@@ -46,6 +47,7 @@ Completed core milestones:
 - Development reset tooling
 
 Partially complete / pending milestones:
+
 - Clustering exists as utility logic, but not exposed via API/automation
 - No People endpoints yet (`/people/`, `/people/<id>/`)
 - No frontend People tab/screens yet
@@ -55,16 +57,19 @@ Partially complete / pending milestones:
 ## Architecture Overview
 
 ### Frontend
+
 - Flutter app in `frontend/facevault/`
 - Main screen: gallery with infinite scroll + upload FAB
 - Photo detail screen: full image with face bounding boxes overlay
 
 ### Backend
+
 - Django + Django REST Framework in `backend/`
 - PostgreSQL database
 - Media files served in development from `backend/media/`
 
 ### ML Pipeline
+
 - Face detection: MTCNN
 - Embeddings: FaceNet (`InceptionResnetV1`, pretrained on `vggface2`)
 - Clustering: DBSCAN (utility function, manual invocation)
@@ -72,12 +77,14 @@ Partially complete / pending milestones:
 ## Tech Stack (Verified)
 
 Backend:
+
 - Django 5.2.12
 - Django REST Framework 3.16.1
 - django-cors-headers 4.9.0
 - PostgreSQL via `psycopg2-binary`
 
 ML / CV:
+
 - `facenet-pytorch`
 - `torch`, `torchvision`
 - `scikit-learn`
@@ -86,6 +93,7 @@ ML / CV:
 - `pillow-heif`
 
 Frontend:
+
 - Flutter (Dart)
 - `http`
 - `file_picker`
@@ -117,6 +125,7 @@ FaceVault/
 ## Data Model
 
 ### Photo (`backend/photos/models.py`)
+
 - `id`
 - `image` (uploaded original)
 - `thumbnail` (auto-generated)
@@ -125,11 +134,13 @@ FaceVault/
 - `uploaded_at`
 
 Behavior:
+
 - On save, image metadata is extracted.
 - EXIF orientation is handled.
 - Thumbnail (max 300x300) is generated and stored.
 
 ### Face (`backend/faces/models.py`)
+
 - `id`
 - `photo` (FK to `Photo`)
 - `x`, `y`, `width`, `height` (bounding box)
@@ -142,29 +153,33 @@ Behavior:
 ## API Reference (Current)
 
 Base URL in frontend is currently hardcoded as:
+
 - `http://127.0.0.1:8000`
 
 ### 1) List Photos
+
 - Endpoint: `GET /photos/`
 - Behavior: paginated photo list, newest first
 - Pagination: DRF page-number pagination, `PAGE_SIZE = 2`
 
 ### 2) Upload Photo
+
 - Endpoint: `POST /photos/upload/`
 - Content type: multipart/form-data
 - File field: `image`
 - Behavior:
-	- saves photo
-	- detects faces
-	- filters out low-confidence detections (`confidence < 0.95`)
-	- crops and stores faces
-	- generates and stores embeddings
-	- returns serialized photo
+  - saves photo
+  - detects faces
+  - filters out low-confidence detections (`confidence < 0.95`)
+  - crops and stores faces
+  - generates and stores embeddings
+  - returns serialized photo
 
 ### 3) Get Faces for One Photo
+
 - Endpoint: `GET /faces/<photo_id>/`
 - Returns list of face boxes and confidence:
-	- `x`, `y`, `width`, `height`, `confidence`
+  - `x`, `y`, `width`, `height`, `confidence`
 
 ## End-to-End Upload Pipeline
 
@@ -180,13 +195,15 @@ Base URL in frontend is currently hardcoded as:
 ## Clustering Status
 
 Implemented utility:
+
 - `backend/ml/cluster_faces.py` contains `cluster_faces()`
 - Uses DBSCAN with:
-	- `eps=0.6`
-	- `min_samples=2`
+  - `eps=0.6`
+  - `min_samples=2`
 - Writes labels to `Face.person_id`
 
 Current limitation:
+
 - Not auto-triggered after uploads
 - No API endpoint/management command exposed yet
 
@@ -195,22 +212,23 @@ Current limitation:
 In `frontend/facevault/lib/`:
 
 - `screens/gallery_screen.dart`
-	- Infinite scrolling grid of thumbnails
-	- Upload button using file picker
-	- Error and empty states
+  - Infinite scrolling grid of thumbnails
+  - Upload button using file picker
+  - Error and empty states
 
 - `screens/photo_view_screen.dart`
-	- Fetches faces for selected photo
-	- Renders image with scaled bounding boxes
+  - Fetches faces for selected photo
+  - Renders image with scaled bounding boxes
 
 - `services/api_service.dart`
-	- `fetchPhotos(page)`
-	- `uploadPhoto(bytes, filename)`
-	- `fetchFaces(photoId)`
+  - `fetchPhotos(page)`
+  - `uploadPhoto(bytes, filename)`
+  - `fetchFaces(photoId)`
 
 ## Development Setup
 
 ### Prerequisites
+
 - Python 3.10+
 - PostgreSQL
 - Flutter SDK
@@ -244,6 +262,7 @@ python manage.py dev_reset
 ```
 
 This command:
+
 - deletes all `Face` and `Photo` records
 - resets ID sequences (PostgreSQL with SQLite fallback logic)
 - recreates `media/photos` and `media/faces`
@@ -265,6 +284,7 @@ cluster_faces()
 ## Configuration Notes
 
 Current settings are development-oriented:
+
 - `DEBUG = True`
 - `CORS_ALLOW_ALL_ORIGINS = True`
 - database credentials are hardcoded in settings
@@ -285,18 +305,22 @@ For production, move sensitive and environment-specific values to environment va
 ## Roadmap (Recommended Next Steps)
 
 ### Phase 1: Operationalize Clustering
+
 - Trigger clustering after upload or via scheduled/background job.
 - Add management command and/or API endpoint for clustering runs.
 
 ### Phase 2: People APIs
+
 - `GET /people/` -> list detected identities
 - `GET /people/<person_id>/` -> photos/faces for one identity
 
 ### Phase 3: Flutter People Experience
+
 - Add People grid screen
 - Add Person detail screen (all photos containing that person)
 
 ### Phase 4: Product Hardening
+
 - Auth (JWT/session)
 - Better error handling/logging
 - Config via env vars
@@ -310,6 +334,7 @@ This project has been designed for migration to JavaScript. A comprehensive migr
 **📋 [JavaScript Migration Prompt](./JAVASCRIPT_MIGRATION_PROMPT.md)**
 
 This prompt file contains:
+
 - Complete application architecture and functionality specification
 - Database schema with exact table structures
 - API endpoint definitions and request/response formats
@@ -320,6 +345,7 @@ This prompt file contains:
 - Security, performance, and deployment considerations
 
 The prompt is designed to be used by any AI model or development team to recreate the entire FaceVault application in JavaScript while maintaining all core functionality including:
+
 - Photo upload and infinite scroll gallery
 - Automatic face detection and embedding generation
 - Person clustering and identity management
@@ -336,6 +362,7 @@ The original Flutter/Django implementation serves as the reference, while the Ja
 ## Portfolio Summary
 
 FaceVault demonstrates practical full-stack + ML integration:
+
 - Computer vision pipeline integration in a web app backend
 - Face representation learning with embeddings
 - Unsupervised clustering for identity grouping
@@ -343,4 +370,3 @@ FaceVault demonstrates practical full-stack + ML integration:
 - Comprehensive migration documentation for technology stack flexibility
 
 In short: a simplified Google Photos-style system with face detection and the foundation for person-level grouping, designed for easy migration to modern JavaScript frameworks.
-
