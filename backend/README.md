@@ -1,15 +1,15 @@
 # FaceVault Backend
 
-Django REST backend for FaceVault. This service handles photo ingestion, media processing, face detection, embedding generation, and face metadata APIs used by the Flutter frontend.
+Django REST backend for FaceVault. This service handles photo ingestion, media processing, face detection, embedding generation, and face metadata APIs used by the React frontend.
 
 ## Quick Context (For New Chat Sessions)
 
 - Backend role: receives uploads and runs the ML pipeline (detection, embedding, auto-clustering).
 - Main entrypoint: `POST /photos/upload/`.
-- Data model core: `Photo` and `Face`.
-- Face clustering: auto-runs after each upload using DBSCAN (cosine distance) and populates `person_id`.
-- People endpoints: `GET /faces/people/` and `GET /faces/people/<person_id>/` to retrieve grouped faces by identity.
-- Current environment is development-focused (debug enabled, open CORS, hardcoded DB credentials).
+- Data model core: `Photo`, `Face`, and `Person`.
+- Face clustering: auto-runs after each upload. Unclustered faces are first matched against existing `Person` centroids (cosine similarity); leftovers are clustered with DBSCAN and become new `Person` rows. Existing people are never recomputed away, so names persist.
+- People endpoints: `GET /faces/people/`, `GET /faces/people/<id>/`, and `PATCH /faces/people/<id>/` (rename).
+- Settings are environment-driven (see `.env.example`) with dev-friendly defaults; `DEBUG`, DB credentials, and CORS origins are no longer hardcoded.
 
 ## Responsibilities
 
@@ -97,8 +97,16 @@ Fields:
 - `confidence` (float)
 - `face_image` (`ImageField`, upload path `faces/`, nullable)
 - `embedding` (`JSONField`, nullable)
-- `person_id` (`IntegerField`, nullable)
+- `person` (FK to `Person`, nullable, `on_delete=SET_NULL`) — `null` means not yet matched to anyone
 - `created_at` (`DateTimeField`, auto)
+
+### Person (`faces.models.Person`)
+Fields:
+- `id`
+- `name` (`CharField`, blank until renamed — API falls back to `"Person {id}"`)
+- `created_at`, `updated_at`
+
+Created only when a fresh cluster of size >= `FACE_CLUSTER_MIN_SAMPLES` emerges; never recreated for an existing identity, so a rename survives future uploads.
 
 ## API Endpoints
 
@@ -135,19 +143,20 @@ Root URL registration is in `facevault/urls.py`.
 
 ### `GET /faces/people/`
 - View: `faces.views.list_people`
-- Returns list of all unique people (identities) with face counts
-- Excludes noise faces (`person_id != -1`)
-- Response format: `[{person_id: int, face_count: int}, ...]`
+- Returns every `Person` with at least one face
+- Response format: `[{id: int, name: string, face_count: int}, ...]`
 
 ### `GET /faces/people/<person_id>/`
 - View: `faces.views.get_person_faces`
-- Returns all faces belonging to a specific person
-- Response includes full face metadata:
-  - face id, person_id, bbox (x, y, width, height)
-  - confidence, embedding metadata
-  - photo reference (id, image URL, thumbnail URL)
-  - face_image URL, created_at timestamp
-- Returns `404` if person_id has no faces
+- Returns `{ person: {id, name, face_count}, faces: [...] }`
+- Each face includes bbox (x, y, width, height), confidence, `person_id`, photo reference (id, image URL, thumbnail URL), `face_image` URL, `created_at`
+- Returns `404` if the person doesn't exist
+
+### `PATCH /faces/people/<person_id>/`
+- View: `faces.views.get_person_faces` (same view, method-dispatched)
+- Body: `{"name": "..."}` (non-empty, <= 100 chars)
+- Renames the person; returns the updated `{id, name, face_count}` summary
+- `400` on empty/oversized name
 
 ## ML Pipeline Details
 
@@ -170,13 +179,13 @@ Root URL registration is in `facevault/urls.py`.
   - 512-dimensional embedding as Python list (JSON serializable)
 
 ### Clustering (`ml/cluster_faces.py`)
-- **Auto-runs after every upload** to re-cluster all embedded faces and update `person_id`.
-- Algorithm: DBSCAN with **cosine distance metric** on **L2-normalized embeddings**.
+- **Auto-runs after every upload**, but only ever processes faces with `person=None` — existing people are left untouched, so names never get reshuffled by a later upload.
+- Step 1: each unassigned face is compared (cosine similarity on L2-normalized embeddings) against every existing person's centroid; a match >= `1 - FACE_CLUSTER_EPS` attaches it to that person.
+- Step 2: anything still unassigned is clustered among itself with DBSCAN (cosine distance); each resulting cluster of size >= `FACE_CLUSTER_MIN_SAMPLES` becomes a brand-new `Person`. Leftover singletons stay `person=None` (same "noise" semantics as DBSCAN's `-1` label before).
 - Configurable via environment variables:
   - `FACE_CLUSTER_EPS`: distance threshold (default `0.4`)
-  - `FACE_CLUSTER_MIN_SAMPLES`: minimum samples per cluster (default `2`)
-- Noise points are labeled with `person_id = -1` (outliers with insufficient similar neighbors).
-- Returns metadata: `faces_processed`, `clusters_assigned`, `noise_faces`, `eps`, `min_samples`.
+  - `FACE_CLUSTER_MIN_SAMPLES`: minimum samples per new cluster (default `2`)
+- Returns metadata: `faces_processed`, `existing_person_matches`, `new_persons_created`, `noise_faces`, `eps`, `min_samples`.
 
 ## Development Commands
 
@@ -272,18 +281,15 @@ Not yet implemented:
 - Background/async pipeline execution (currently synchronous).
 - Authentication and permissions.
 - Comprehensive test coverage.
-- Re-identification/re-embedding workflows.
+- Re-identification/re-embedding workflows (e.g. merging two people, splitting a bad cluster).
 
 ## Known Risks and Caveats
 
 - Upload pipeline is synchronous (blocks request while running ML inference).
 - Confidence threshold is hardcoded at `0.95` in upload view.
-- CORS currently allows all origins (`CORS_ALLOW_ALL_ORIGINS=True`).
-- `DEBUG=True` in settings (exception details exposed).
-- Database credentials are hardcoded in settings (use env vars for production).
-- No explicit image file size validation; large uploads can cause timeouts.
-- Clustering may mark valid faces as noise (`person_id=-1`) if insufficient similar samples exist.
+- Clustering may leave valid faces unassigned (`person=None`) if insufficient similar samples exist yet.
 - No authentication/authorization; all endpoints are open.
+- `SECRET_KEY`, `DEBUG`, DB credentials, and CORS are now environment-driven (see `.env.example`) but the shipped defaults are still dev-oriented — set real values via `.env` before deploying.
 
 ## Backend Roadmap
 
@@ -296,11 +302,11 @@ Not yet implemented:
 - ✅ `GET /faces/people/` to list identities.
 - ✅ `GET /faces/people/<person_id>/` to fetch related faces/photos.
 
-### Phase 3: Hardening (Upcoming)
-- Move secrets and DB config to env vars.
-- Restrict CORS and configure `ALLOWED_HOSTS`.
+### Phase 3: Hardening
+- ✅ Move secrets and DB config to env vars (`.env.example`).
+- ✅ CORS is now allow-listed via `CORS_ALLOWED_ORIGINS` (opt back into wide-open with `CORS_ALLOW_ALL_ORIGINS=true`).
+- ✅ Server-side image file size/type validation on upload.
 - Add structured logging and better exception handling.
-- Add image file size/type validation.
 - Expand automated tests (API + pipeline + serializers).
 
 ### Phase 4: Optional Enhancements

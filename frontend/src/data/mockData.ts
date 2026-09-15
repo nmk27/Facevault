@@ -1,14 +1,38 @@
 import type { FaceBox, Paginated, Person, Photo } from '../types'
 
+// Mimics a real library: photos come in day-long "sessions" of varying size,
+// separated by gaps of a few days, so the day-grouped grid actually shows
+// multiple photos per row instead of exactly one.
+const SESSION_SIZES = [1, 5, 3, 6, 2, 4, 1, 7, 2, 3]
+const SESSION_GAP_DAYS = [0, 1, 3, 1, 2, 4, 1, 2, 5, 1]
+
+function dayOffsetForIndex(index: number): number {
+    let remaining = index
+    let dayOffset = 0
+    let sessionCursor = 0
+
+    while (true) {
+        const sessionSize = SESSION_SIZES[sessionCursor % SESSION_SIZES.length]
+        if (remaining < sessionSize) {
+            return dayOffset
+        }
+        remaining -= sessionSize
+        dayOffset += SESSION_GAP_DAYS[sessionCursor % SESSION_GAP_DAYS.length] + 1
+        sessionCursor += 1
+    }
+}
+
 export const MOCK_PHOTOS: Photo[] = Array.from({ length: 60 }).map((_, index) => {
     const id = String(index + 1)
     const picsumId = 100 + ((index * 7) % 80)
+    const dayOffset = dayOffsetForIndex(index)
+    const hourOffset = (index % 6) * 3_600_000
     return {
         id,
         url: `https://picsum.photos/id/${picsumId}/1400/900`,
         thumbnailUrl: `https://picsum.photos/id/${picsumId}/600/400`,
         title: `Photo ${id}`,
-        createdAt: new Date(Date.now() - index * 86_400_000).toISOString(),
+        createdAt: new Date(Date.now() - dayOffset * 86_400_000 - hourOffset).toISOString(),
         width: 1400,
         height: 900,
     }
