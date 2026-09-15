@@ -1,372 +1,131 @@
 # FaceVault
 
-FaceVault is a full-stack photo application inspired by Google Photos workflows. It lets users upload images, automatically detects faces, generates embeddings, stores cropped face data, and displays results in a Flutter UI.
+FaceVault is a full-stack photo app inspired by Google Photos / Apple Photos: upload images, automatically detect faces, generate embeddings, group faces into people, and browse everything in a gallery and a People section.
 
-The project is currently a strong portfolio-stage prototype with a complete upload-to-detection pipeline, basic gallery UX, and face overlays. Person-level grouping and production hardening are the next major steps.
+## Stack
 
-## Quick Context (For New Chat Sessions)
+- **Frontend**: React 19 + Vite + TypeScript + Tailwind CSS (`frontend/`), with light/dark mode and an Apple-Photos-style UI.
+- **Backend**: Django + Django REST Framework (`backend/`), PostgreSQL.
+- **ML pipeline**: MTCNN for face detection, FaceNet (`InceptionResnetV1`, `vggface2`) for 512-dim embeddings, DBSCAN for clustering.
 
-If you are reading this in a fresh chat, this is the fastest way to understand the project:
+The original prototype used a Flutter frontend; it was fully replaced by the React app (`frontend/`) — see git history for the migration.
 
-- Product goal: Google Photos-style app with face detection and person grouping.
-- Current state: upload + detection + embeddings + gallery + face overlay are working.
-- Key gap: person grouping exists only as backend utility logic, not exposed as feature.
-- Backend root: `backend/`
-- Frontend root: `frontend/facevault/`
-- Critical pipeline entrypoint: `POST /photos/upload/`
-- Most important next deliverable: People API + People UI built on `Face.person_id`.
+## What works today
 
-## Documentation Map
+- Upload photos (drag-and-drop or file picker), with HEIC/HEIF support.
+- Automatic face detection, cropping, and embedding generation on upload.
+- **Stable person identity**: faces are matched against existing people by embedding similarity before falling back to clustering, so a person's identity (and name) survives new uploads instead of being recomputed from scratch every time.
+- People can be renamed (`PATCH /faces/people/<id>/`), and the gallery/person pages reflect the name everywhere.
+- Gallery grouped by day, with a full-screen photo viewer (keyboard arrow navigation, face bounding-box overlay).
+- People grid with circular avatar cards and a per-person photo timeline.
 
-- Root overview: [README.md](README.md)
-- Backend deep dive: [backend/README.md](backend/README.md)
-- Frontend deep dive: [frontend/facevault/README.md](frontend/facevault/README.md)
-
-## What This Project Does Today
-
-- Upload photos from Flutter to Django REST API.
-- Store original images and generated thumbnails.
-- Detect faces in uploaded images.
-- Crop and save detected faces as separate files.
-- Generate 512-dimensional FaceNet embeddings per detected face.
-- Persist detection metadata and embeddings in PostgreSQL.
-- View a paginated gallery of uploaded photos.
-- Open a photo and render detected face bounding boxes.
-
-## Current Progress Snapshot
-
-Current completion is approximately 60-70% toward a portfolio-ready "People clustering" product.
-
-Completed core milestones:
-
-- Backend photo upload and retrieval APIs
-- Face detection and cropped-face persistence
-- Embedding generation pipeline
-- Frontend upload + gallery + photo detail overlay
-- HEIC/HEIF image support
-- Development reset tooling
-
-Partially complete / pending milestones:
-
-- Clustering exists as utility logic, but not exposed via API/automation
-- No People endpoints yet (`/people/`, `/people/<id>/`)
-- No frontend People tab/screens yet
-- No authentication/authorization layer
-- No production deployment/security hardening
-
-## Architecture Overview
-
-### Frontend
-
-- Flutter app in `frontend/facevault/`
-- Main screen: gallery with infinite scroll + upload FAB
-- Photo detail screen: full image with face bounding boxes overlay
-
-### Backend
-
-- Django + Django REST Framework in `backend/`
-- PostgreSQL database
-- Media files served in development from `backend/media/`
-
-### ML Pipeline
-
-- Face detection: MTCNN
-- Embeddings: FaceNet (`InceptionResnetV1`, pretrained on `vggface2`)
-- Clustering: DBSCAN (utility function, manual invocation)
-
-## Tech Stack (Verified)
-
-Backend:
-
-- Django 5.2.12
-- Django REST Framework 3.16.1
-- django-cors-headers 4.9.0
-- PostgreSQL via `psycopg2-binary`
-
-ML / CV:
-
-- `facenet-pytorch`
-- `torch`, `torchvision`
-- `scikit-learn`
-- `numpy`
-- `pillow`
-- `pillow-heif`
-
-Frontend:
-
-- Flutter (Dart)
-- `http`
-- `file_picker`
-- `mime`
-
-## Project Structure
+## Project structure
 
 ```text
 FaceVault/
 |- backend/
-|  |- facevault/              # Django settings, URLs, ASGI/WSGI
-|  |- photos/                 # Photo model, serializers, upload/list API
-|  |- faces/                  # Face model + face retrieval API
-|  |- ml/                     # Detection, embeddings, clustering, dev utils
-|  |- users/                  # Django app + custom dev command(s)
-|  |- media/                  # Uploaded photos, thumbnails, face crops
+|  |- facevault/     # Django settings, URLs
+|  |- photos/        # Photo model, upload/list API
+|  |- faces/         # Face + Person models, people API
+|  |- ml/            # Detection, embeddings, clustering
+|  |- users/         # Custom dev management command(s)
 |  |- manage.py
 |  |- requirements.txt
+|  |- .env.example
 |- frontend/
-|  |- facevault/
-|     |- lib/
-|     |  |- models/
-|     |  |- services/
-|     |  |- screens/
-|     |- pubspec.yaml
+|  |- src/
+|  |  |- components/ # gallery/, people/, layout/, upload/, shared/, ui/
+|  |  |- pages/
+|  |  |- hooks/
+|  |  |- services/    # api.ts - backend client
+|  |  |- theme/       # dark mode provider
+|  |- package.json
 |- README.md
 ```
 
-## Data Model
+## Data model
 
 ### Photo (`backend/photos/models.py`)
-
-- `id`
-- `image` (uploaded original)
-- `thumbnail` (auto-generated)
-- `width`
-- `height`
-- `uploaded_at`
-
-Behavior:
-
-- On save, image metadata is extracted.
-- EXIF orientation is handled.
-- Thumbnail (max 300x300) is generated and stored.
+`id`, `image`, `thumbnail` (auto-generated, EXIF-corrected), `width`, `height`, `uploaded_at`.
 
 ### Face (`backend/faces/models.py`)
+`id`, `photo` (FK), `x`/`y`/`width`/`height` (bounding box), `confidence`, `face_image` (crop), `embedding` (512-dim JSON vector), `person` (FK to `Person`, nullable — null means not yet clustered with anyone).
 
-- `id`
-- `photo` (FK to `Photo`)
-- `x`, `y`, `width`, `height` (bounding box)
-- `confidence`
-- `face_image` (cropped face)
-- `embedding` (JSON vector, 512 dims)
-- `person_id` (cluster label, nullable)
-- `created_at`
+### Person (`backend/faces/models.py`)
+`id`, `name` (blank until renamed, falls back to `"Person {id}"` in API responses), `created_at`, `updated_at`. Created automatically by clustering; never recreated once it exists, so a name sticks across future uploads.
 
-## API Reference (Current)
+## API reference
 
-Base URL in frontend is currently hardcoded as:
+Base URL for the frontend is `VITE_API_BASE_URL` (defaults to `http://127.0.0.1:8000`).
 
-- `http://127.0.0.1:8000`
+- `GET /photos/` — paginated photo list, newest first.
+- `POST /photos/upload/` — multipart upload (field `image`); runs detection, embedding, and clustering synchronously; validates content-type and a 10MB size limit server-side.
+- `GET /faces/<photo_id>/` — faces detected in one photo.
+- `GET /faces/people/` — list of people with face counts and names.
+- `GET /faces/people/<id>/` — `{ person: {id, name, face_count}, faces: [...] }` for one person.
+- `PATCH /faces/people/<id>/` — body `{"name": "..."}`, renames a person.
 
-### 1) List Photos
+## Clustering
 
-- Endpoint: `GET /photos/`
-- Behavior: paginated photo list, newest first
-- Pagination: DRF page-number pagination, `PAGE_SIZE = 2`
+`backend/ml/cluster_faces.py::cluster_faces()` runs after every upload:
 
-### 2) Upload Photo
+1. Faces without a `person` are compared (cosine similarity on L2-normalized embeddings) against the centroid of each existing person; a good match attaches the face to that person.
+2. Anything left over is clustered among itself with DBSCAN (`FACE_CLUSTER_EPS`, `FACE_CLUSTER_MIN_SAMPLES`); a resulting cluster of size >= `min_samples` becomes a brand-new `Person`. Leftover singletons stay unassigned (`person=None`), same as DBSCAN's "noise" label before.
 
-- Endpoint: `POST /photos/upload/`
-- Content type: multipart/form-data
-- File field: `image`
-- Behavior:
-  - saves photo
-  - detects faces
-  - filters out low-confidence detections (`confidence < 0.95`)
-  - crops and stores faces
-  - generates and stores embeddings
-  - returns serialized photo
+This means existing people (and their names) are never recomputed away — only genuinely new faces get evaluated.
 
-### 3) Get Faces for One Photo
-
-- Endpoint: `GET /faces/<photo_id>/`
-- Returns list of face boxes and confidence:
-  - `x`, `y`, `width`, `height`, `confidence`
-
-## End-to-End Upload Pipeline
-
-1. User selects an image in Flutter gallery screen.
-2. Frontend uploads to `POST /photos/upload/`.
-3. Django stores the image and generates a thumbnail.
-4. MTCNN runs face detection.
-5. Each valid face is cropped and saved in `media/faces/`.
-6. FaceNet embedding is generated per crop.
-7. Face record is saved with bbox, confidence, crop path, embedding.
-8. User opens photo detail and sees face rectangles overlaid.
-
-## Clustering Status
-
-Implemented utility:
-
-- `backend/ml/cluster_faces.py` contains `cluster_faces()`
-- Uses DBSCAN with:
-  - `eps=0.6`
-  - `min_samples=2`
-- Writes labels to `Face.person_id`
-
-Current limitation:
-
-- Not auto-triggered after uploads
-- No API endpoint/management command exposed yet
-
-## Frontend Features (Current)
-
-In `frontend/facevault/lib/`:
-
-- `screens/gallery_screen.dart`
-  - Infinite scrolling grid of thumbnails
-  - Upload button using file picker
-  - Error and empty states
-
-- `screens/photo_view_screen.dart`
-  - Fetches faces for selected photo
-  - Renders image with scaled bounding boxes
-
-- `services/api_service.dart`
-  - `fetchPhotos(page)`
-  - `uploadPhoto(bytes, filename)`
-  - `fetchFaces(photoId)`
-
-## Development Setup
+## Development setup
 
 ### Prerequisites
+- Python 3.10+, PostgreSQL, Node.js 20+
 
-- Python 3.10+
-- PostgreSQL
-- Flutter SDK
-
-### Backend Setup
+### Backend
 
 ```bash
 cd backend
 python -m venv .venv
-.venv\Scripts\activate
+source .venv/bin/activate  # .venv\Scripts\activate on Windows
 pip install -r requirements.txt
+cp .env.example .env       # adjust DB credentials etc.
 python manage.py migrate
 python manage.py runserver
 ```
 
-### Frontend Setup
+### Frontend
 
 ```bash
-cd frontend/facevault
-flutter pub get
-flutter run -d chrome
+cd frontend
+cp .env.example .env       # optional: VITE_API_BASE_URL, VITE_ENABLE_MOCKS
+npm install
+npm run dev
 ```
 
-### Dev Utilities
+Set `VITE_ENABLE_MOCKS=true` to run the UI against generated mock data without a backend.
 
-### Reset all dev data
-
-```bash
-cd backend
-python manage.py dev_reset
-```
-
-This command:
-
-- deletes all `Face` and `Photo` records
-- resets ID sequences (PostgreSQL with SQLite fallback logic)
-- recreates `media/photos` and `media/faces`
-
-### Manual clustering (current workflow)
+### Dev utilities
 
 ```bash
 cd backend
-python manage.py shell
+python manage.py dev_reset   # wipes Face/Photo records and media/, resets sequences
 ```
 
-Then:
+## Configuration
 
-```python
-from ml.cluster_faces import cluster_faces
-cluster_faces()
-```
+Backend settings (`backend/facevault/settings.py`) read from environment variables (see `backend/.env.example`): `DJANGO_SECRET_KEY`, `DJANGO_DEBUG`, `DJANGO_ALLOWED_HOSTS`, `DB_*`, `CORS_ALLOWED_ORIGINS` / `CORS_ALLOW_ALL_ORIGINS`, `FACE_CLUSTER_EPS`, `FACE_CLUSTER_MIN_SAMPLES`. Sensible local-dev defaults are baked in, so the app still runs without a `.env` file.
 
-## Configuration Notes
+## Known limitations
 
-Current settings are development-oriented:
-
-- `DEBUG = True`
-- `CORS_ALLOW_ALL_ORIGINS = True`
-- database credentials are hardcoded in settings
-- frontend API URL is hardcoded to localhost
-
-For production, move sensitive and environment-specific values to environment variables.
-
-## Known Limitations
-
-- Clustering is not automated or exposed via API.
-- No People endpoints yet (grouped identities by `person_id`).
-- No People UI in Flutter.
-- No authentication/authorization.
+- No authentication/authorization layer.
 - No delete/edit flows for photos or faces.
-- Minimal automated tests (placeholder test files).
-- Upload pipeline is synchronous (can become slow for heavy images/many faces).
+- Upload pipeline is synchronous (detection + embeddings run inline; can be slow for large images or many faces).
+- Minimal automated tests.
 
-## Roadmap (Recommended Next Steps)
+## Roadmap ideas
 
-### Phase 1: Operationalize Clustering
+- Background job queue (Celery/Redis) for the upload pipeline instead of synchronous processing.
+- Auth (session or JWT).
+- Delete/merge people, delete photos.
 
-- Trigger clustering after upload or via scheduled/background job.
-- Add management command and/or API endpoint for clustering runs.
+## JavaScript migration reference
 
-### Phase 2: People APIs
-
-- `GET /people/` -> list detected identities
-- `GET /people/<person_id>/` -> photos/faces for one identity
-
-### Phase 3: Flutter People Experience
-
-- Add People grid screen
-- Add Person detail screen (all photos containing that person)
-
-### Phase 4: Product Hardening
-
-- Auth (JWT/session)
-- Better error handling/logging
-- Config via env vars
-- Security and CORS restrictions
-- Optional async processing queue (Celery/Redis)
-
-## JavaScript Migration
-
-This project has been designed for migration to JavaScript. A comprehensive migration guide is available:
-
-**📋 [JavaScript Migration Prompt](./JAVASCRIPT_MIGRATION_PROMPT.md)**
-
-This prompt file contains:
-
-- Complete application architecture and functionality specification
-- Database schema with exact table structures
-- API endpoint definitions and request/response formats
-- Recommended JavaScript technology stack (React, Node.js, PostgreSQL)
-- ML pipeline implementation using face-api.js or TensorFlow.js
-- Step-by-step migration instructions
-- Code examples and component architectures
-- Security, performance, and deployment considerations
-
-The prompt is designed to be used by any AI model or development team to recreate the entire FaceVault application in JavaScript while maintaining all core functionality including:
-
-- Photo upload and infinite scroll gallery
-- Automatic face detection and embedding generation
-- Person clustering and identity management
-- Responsive Material Design UI with dark/light themes
-
-### Using the Migration Prompt
-
-1. **For AI Models**: Provide the `JAVASCRIPT_MIGRATION_PROMPT.md` file as context along with specific implementation requests
-2. **For Developers**: Use it as a comprehensive specification document for manual migration
-3. **For Teams**: Reference it as architecture documentation and implementation guide
-
-The original Flutter/Django implementation serves as the reference, while the JavaScript version provides broader compatibility and easier deployment options.
-
-## Portfolio Summary
-
-FaceVault demonstrates practical full-stack + ML integration:
-
-- Computer vision pipeline integration in a web app backend
-- Face representation learning with embeddings
-- Unsupervised clustering for identity grouping
-- API-first backend and Flutter frontend interaction
-- Comprehensive migration documentation for technology stack flexibility
-
-In short: a simplified Google Photos-style system with face detection and the foundation for person-level grouping, designed for easy migration to modern JavaScript frameworks.
+`JAVASCRIPT_MIGRATION_PROMPT.md` was written as a spec for migrating the original Flutter app to a JS stack. That migration is complete (this README describes the resulting app); the file is kept only as historical/architectural reference.

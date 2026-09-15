@@ -1,9 +1,17 @@
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
-from django.db.models import Count, Q
-from .models import Face
-from photos.models import Photo
+from django.db.models import Count
+from django.shortcuts import get_object_or_404
+from .models import Face, Person
+
+
+def _person_summary(person):
+    return {
+        'id': person.id,
+        'name': person.name or f'Person {person.id}',
+        'face_count': person.face_count,
+    }
 
 
 @api_view(['GET'])
@@ -29,39 +37,32 @@ def get_faces(request, photo_id):
 
 @api_view(['GET'])
 def list_people(request):
-    """List all people (unique person_ids) with face counts."""
-    people = (
-        Face.objects
-        .filter(person_id__isnull=False)
-        .exclude(person_id=-1)
-        .values('person_id')
-        .annotate(face_count=Count('id'))
-        .order_by('person_id')
+    """List all identified people with face counts."""
+    people = Person.objects.annotate(face_count=Count('faces')).filter(face_count__gt=0).order_by('id')
+    return Response([_person_summary(person) for person in people])
+
+
+@api_view(['GET', 'PATCH'])
+def get_person_faces(request, person_id):
+    """Get all faces belonging to a specific person, or rename them."""
+    person = get_object_or_404(
+        Person.objects.annotate(face_count=Count('faces')), pk=person_id
     )
 
-    data = [
-        {
-            'person_id': int(p['person_id']),
-            'face_count': p['face_count'],
-        }
-        for p in people
-    ]
+    if request.method == 'PATCH':
+        name = request.data.get('name', '')
+        if not isinstance(name, str) or not name.strip():
+            return Response({'detail': 'name must be a non-empty string'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(name) > 100:
+            return Response({'detail': 'name must be 100 characters or fewer'}, status=status.HTTP_400_BAD_REQUEST)
 
-    return Response(data)
+        person.name = name.strip()
+        person.save(update_fields=['name', 'updated_at'])
+        return Response(_person_summary(person))
 
-
-@api_view(['GET'])
-def get_person_faces(request, person_id):
-    """Get all faces belonging to a specific person."""
     faces = Face.objects.filter(person_id=person_id).select_related('photo')
 
-    if not faces.exists():
-        return Response(
-            {'detail': f'No faces found for person_id={person_id}'},
-            status=status.HTTP_404_NOT_FOUND
-        )
-
-    data = [
+    faces_data = [
         {
             'id': face.id,
             'person_id': face.person_id,
@@ -82,4 +83,4 @@ def get_person_faces(request, person_id):
         for face in faces
     ]
 
-    return Response(data)
+    return Response({'person': _person_summary(person), 'faces': faces_data})

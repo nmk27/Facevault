@@ -37,7 +37,8 @@ type BackendFace = {
 }
 
 type BackendPersonSummary = {
-    person_id: number
+    id: number
+    name: string
     face_count: number
 }
 
@@ -251,7 +252,8 @@ export async function getPeople(page = 1, pageSize = 20): Promise<Paginated<Pers
         const enrichedItems = await Promise.all(
             pageItems.map(async (person) => {
                 try {
-                    const faces = await requestJson<BackendFace[]>(`/faces/people/${person.person_id}/`)
+                    const detail = await requestJson<{ faces: BackendFace[] }>(`/faces/people/${person.id}/`)
+                    const faces = detail.faces
                     const coverFromFace = toAbsoluteMediaUrl(faces[0]?.face_image)
                     const coverFromPhoto = toAbsoluteMediaUrl(
                         faces[0]?.photo?.thumbnail ?? faces[0]?.photo?.image ?? null,
@@ -270,8 +272,8 @@ export async function getPeople(page = 1, pageSize = 20): Promise<Paginated<Pers
                             : 0
 
                     return {
-                        id: String(person.person_id),
-                        name: `Person ${person.person_id}`,
+                        id: String(person.id),
+                        name: person.name,
                         faceCount: person.face_count,
                         averageConfidence,
                         coverUrl: coverFromFace || coverFromPhoto,
@@ -279,8 +281,8 @@ export async function getPeople(page = 1, pageSize = 20): Promise<Paginated<Pers
                     }
                 } catch {
                     return {
-                        id: String(person.person_id),
-                        name: `Person ${person.person_id}`,
+                        id: String(person.id),
+                        name: person.name,
                         faceCount: person.face_count,
                         averageConfidence: 0,
                         coverUrl: '',
@@ -316,13 +318,15 @@ export async function getPerson(personId: string): Promise<{ person: Person; pho
         return { person, photos }
     }
 
-    const faces = await requestJson<BackendFace[]>(`/faces/people/${personId}/`)
+    const detail = await requestJson<{ person: BackendPersonSummary; faces: BackendFace[] }>(
+        `/faces/people/${personId}/`,
+    )
 
     const photoMap = new Map<string, Photo>()
     let confidenceTotal = 0
     let confidenceCount = 0
 
-    faces.forEach((face) => {
+    detail.faces.forEach((face) => {
         if (typeof face.confidence === 'number') {
             confidenceTotal += face.confidence
             confidenceCount += 1
@@ -348,9 +352,9 @@ export async function getPerson(personId: string): Promise<{ person: Person; pho
     })
 
     const person: Person = {
-        id: String(personId),
-        name: `Person ${personId}`,
-        faceCount: faces.length,
+        id: String(detail.person.id),
+        name: detail.person.name,
+        faceCount: detail.person.face_count,
         averageConfidence: confidenceCount ? confidenceTotal / confidenceCount : 0,
         coverUrl: photoMap.values().next().value?.thumbnailUrl ?? '',
         sampleImageUrls: Array.from(photoMap.values())
@@ -361,5 +365,31 @@ export async function getPerson(personId: string): Promise<{ person: Person; pho
     return {
         person,
         photos: Array.from(photoMap.values()),
+    }
+}
+
+export async function renamePerson(personId: string, name: string): Promise<Person> {
+    if (useMocks()) {
+        return { id: personId, name, faceCount: 0, averageConfidence: 0, coverUrl: '', sampleImageUrls: [] }
+    }
+
+    const response = await fetch(`${API_BASE_URL}/faces/people/${personId}/`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+    })
+
+    if (!response.ok) {
+        throw new Error(`Failed to rename person: ${response.status}`)
+    }
+
+    const summary = (await response.json()) as BackendPersonSummary
+    return {
+        id: String(summary.id),
+        name: summary.name,
+        faceCount: summary.face_count,
+        averageConfidence: 0,
+        coverUrl: '',
+        sampleImageUrls: [],
     }
 }

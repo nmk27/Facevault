@@ -20,9 +20,25 @@ from ml.generate_embeddings import generate_embedding
 
 logger = logging.getLogger(__name__)
 
+ALLOWED_CONTENT_TYPES = {'image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'}
+MAX_UPLOAD_SIZE = 10 * 1024 * 1024
+
 
 @api_view(['POST'])
 def upload_photo(request):
+    uploaded_file = request.FILES.get('image')
+    if uploaded_file is not None:
+        if uploaded_file.content_type not in ALLOWED_CONTENT_TYPES:
+            return Response(
+                {'detail': f'Unsupported file type: {uploaded_file.content_type}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if uploaded_file.size > MAX_UPLOAD_SIZE:
+            return Response(
+                {'detail': 'File exceeds the 10MB upload limit'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
     serializer = PhotoSerializer(data=request.data)
     if serializer.is_valid():
         serializer.save()
@@ -60,7 +76,7 @@ def upload_photo(request):
                 embedding=embedding,
             )
 
-        # Keep person_id labels up to date for all embedded faces.
+        # Keep person identities up to date for all newly embedded faces.
         try:
             cluster_faces()
         except Exception:
@@ -69,12 +85,6 @@ def upload_photo(request):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-
-# @api_view(['GET'])
-# def list_photos(request):
-#     photos = Photo.objects.all().order_by('-uploaded_at')
-#     serializer = PhotoSerializer(photos, many=True)
-#     return Response(serializer.data)
 
 class PhotoListView(ListAPIView):
     queryset = Photo.objects.all().order_by('-uploaded_at')

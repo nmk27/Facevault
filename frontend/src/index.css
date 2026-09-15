@@ -5,26 +5,14 @@
 @tailwind utilities;
 
 :root {
-  font-family: "Inter", "Segoe UI", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", system-ui, sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  color: #0f172a;
-  background:
-    radial-gradient(
-      circle at top left,
-      rgba(251, 191, 36, 0.08),
-      transparent 30%
-    ),
-    radial-gradient(
-      circle at top right,
-      rgba(148, 163, 184, 0.12),
-      transparent 26%
-    ),
-    linear-gradient(180deg, #f8fafc 0%, #f8fafc 48%, #f1f5f9 100%);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  color-scheme: light dark;
 }
 
 * {
@@ -33,19 +21,8 @@
 
 body {
   margin: 0;
-  background:
-    radial-gradient(
-      circle at top left,
-      rgba(251, 191, 36, 0.08),
-      transparent 30%
-    ),
-    radial-gradient(
-      circle at top right,
-      rgba(148, 163, 184, 0.12),
-      transparent 26%
-    ),
-    linear-gradient(180deg, #f8fafc 0%, #f8fafc 48%, #f1f5f9 100%);
   min-height: 100svh;
+  @apply bg-white text-neutral-900 dark:bg-black dark:text-neutral-100;
 }
 
 #root {
