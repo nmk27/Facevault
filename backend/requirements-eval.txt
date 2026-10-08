@@ -1,0 +1,5 @@
+# Extra packages for the evaluation scripts in evaluation/ (plots only; everything else is in requirements.txt).
+# Install with: pip install -r requirements-eval.txt
+# Do NOT `pip install matplotlib` on its own: its newest release pulls numpy 2, which breaks the pinned torch 2.2.2.
+-r requirements.txt
+matplotlib==3.10.9

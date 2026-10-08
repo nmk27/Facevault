@@ -2,7 +2,7 @@
 
 Django REST backend for FaceVault. This service handles photo ingestion, media processing, face detection, embedding generation, and face metadata APIs used by the React frontend.
 
-## Quick Context (For New Chat Sessions)
+## Overview
 
 - Backend role: receives uploads and runs the ML pipeline (detection, embedding, auto-clustering).
 - Main entrypoint: `POST /photos/upload/`.
@@ -61,7 +61,12 @@ backend/
 |  |- detect_faces.py
 |  |- generate_embeddings.py
 |  |- cluster_faces.py
+|  |- clustering.py
+|  |- image_utils.py
 |  |- dev_utils.py
+|- evaluation/
+|  |- evaluate_lfw.py
+|  |- README.md
 |- users/
 |  |- management/commands/dev_reset.py
 |- media/
@@ -79,15 +84,16 @@ Fields:
 - `image` (`ImageField`, upload path `photos/`)
 - `thumbnail` (`ImageField`, nullable)
 - `uploaded_at` (`DateTimeField`, auto)
-- `width` (`IntegerField`, nullable)
+- `taken_at` (`DateTimeField`, nullable) — EXIF capture time (camera wall-clock time stored as UTC)
+- `width` (`IntegerField`, nullable) — size as displayed (EXIF orientation applied)
 - `height` (`IntegerField`, nullable)
 
-Save behavior:
-- Opens uploaded image with PIL.
-- Stores width/height.
-- Applies EXIF orientation correction.
-- Generates thumbnail with max size 300x300.
-- Saves thumbnail path as `photos/thumb_<original_name>`.
+Ingest (runs once, when the row is first created):
+- Opens the uploaded image with PIL and applies EXIF orientation.
+- Stores width/height of the oriented image, so they match what browsers display and what face boxes use.
+- Reads the EXIF capture date into `taken_at`.
+- Converts formats browsers cannot display (e.g. HEIC/HEIF) to JPEG; JPEG/PNG/WebP originals are stored byte-for-byte.
+- Generates a JPEG thumbnail (max 300x300) under `thumbnails/thumb_<original_stem>.jpg`.
 
 ### Face (`faces.models.Face`)
 Fields:
@@ -115,9 +121,13 @@ Root URL registration is in `facevault/urls.py`.
 ### `GET /photos/`
 - View: `photos.views.PhotoListView`
 - Behavior:
-  - returns photos ordered by `-uploaded_at`
+  - returns photos newest first by capture date (`taken_at`), falling back to `uploaded_at`
   - paginated response via DRF page-number pagination
-- Current pagination size: `PAGE_SIZE = 2`
+- Current pagination size: `PAGE_SIZE = 24`
+
+### `GET /photos/<photo_id>/`
+- View: `photos.views.PhotoDetailView`
+- Returns one serialized photo; `404` if it does not exist
 
 ### `POST /photos/upload/`
 - View: `photos.views.upload_photo`
@@ -130,11 +140,11 @@ Root URL registration is in `facevault/urls.py`.
 - Processing pipeline:
   1. Save photo via serializer.
   2. Run face detection using MTCNN.
-  3. Open source image and iterate detections.
+  3. Detect on the oriented image, then iterate detections.
   4. Skip detections where `confidence < 0.95`.
   5. Crop each accepted face and generate embedding via `generate_embedding(cropped_face)`.
   6. Create `Face` record with bbox, confidence, cropped image, embedding.
-  7. **Auto-run clustering** to update `person_id` for all embedded faces.
+  7. **Auto-run clustering** to assign each embedded face to a `Person`.
 
 ### `GET /faces/<photo_id>/`
 - View: `faces.views.get_faces`
@@ -165,25 +175,26 @@ Root URL registration is in `facevault/urls.py`.
 
 ### Face detection (`ml/detect_faces.py`)
 - Detector: `MTCNN()` from facenet-pytorch.
-- Input: PIL image converted to RGB.
+- Input: a PIL image, or an image path (opened with EXIF orientation applied); converted to RGB.
+- Boxes are in the pixel space of the image as displayed.
 - Output: list of detections with `box` (x1, y1, x2, y2) and `confidence`.
-- Detections with confidence < 0.95 are filtered out in the upload view.
+- Detections with confidence < `MIN_FACE_CONFIDENCE` (0.95, defined in `ml/detect_faces.py`) are filtered out in the upload view.
 
 ### Embeddings (`ml/generate_embeddings.py`)
 - Model: `InceptionResnetV1(pretrained='vggface2').eval()`.
 - Preprocessing:
   - convert to RGB
   - resize to 160x160
-  - convert to tensor and normalize by 255
+  - convert to tensor and scale as FaceNet expects, `(pixels - 127.5) / 128` (`STANDARDIZE_EMBEDDINGS` in `ml/defaults.py`; the original `pixels / 255` is still available as `generate_embedding(image, standardize=False)`)
 - Output:
   - 512-dimensional embedding as Python list (JSON serializable)
 
-### Clustering (`ml/cluster_faces.py`)
+### Clustering (`ml/cluster_faces.py`, decision logic in `ml/clustering.py`)
 - **Auto-runs after every upload**, but only ever processes faces with `person=None` — existing people are left untouched, so names never get reshuffled by a later upload.
 - Step 1: each unassigned face is compared (cosine similarity on L2-normalized embeddings) against every existing person's centroid; a match >= `1 - FACE_CLUSTER_EPS` attaches it to that person.
 - Step 2: anything still unassigned is clustered among itself with DBSCAN (cosine distance); each resulting cluster of size >= `FACE_CLUSTER_MIN_SAMPLES` becomes a brand-new `Person`. Leftover singletons stay `person=None` (same "noise" semantics as DBSCAN's `-1` label before).
 - Configurable via environment variables:
-  - `FACE_CLUSTER_EPS`: distance threshold (default `0.4`)
+  - `FACE_CLUSTER_EPS`: distance threshold (default `0.2`, chosen on LFW held-out people; `0.4` merges unrelated people, see `evaluation/README.md`). A `FACE_CLUSTER_EPS` in your `.env` overrides this default, so update it if you copied an older `.env.example`
   - `FACE_CLUSTER_MIN_SAMPLES`: minimum samples per new cluster (default `2`)
 - Returns metadata: `faces_processed`, `existing_person_matches`, `new_persons_created`, `noise_faces`, `eps`, `min_samples`.
 
@@ -234,8 +245,8 @@ Useful from Django shell for local experiments:
 ## Setup
 
 ### Prerequisites
-- Python 3.10+
-- PostgreSQL instance
+- Python 3.11–3.12 (the pinned `torch==2.2.2` has no wheels for 3.13+, and pinned packages such as `networkx==3.6.1` need 3.11+)
+- PostgreSQL instance (or SQLite via `DB_ENGINE`, see below)
 
 ### Install
 
@@ -248,7 +259,7 @@ pip install -r requirements.txt
 
 ### Database and Migrations
 
-Update database settings in `facevault/settings.py` if needed, then run:
+Copy `.env.example` to `.env` and adjust the `DB_*` values (settings read them from the environment). To use SQLite instead of PostgreSQL, set `DB_ENGINE=django.db.backends.sqlite3` and `DB_NAME=db.sqlite3`. Then run:
 
 ```bash
 python manage.py migrate
@@ -259,6 +270,14 @@ python manage.py migrate
 ```bash
 python manage.py runserver
 ```
+
+### Test
+
+```bash
+DB_ENGINE=django.db.backends.sqlite3 python manage.py test
+```
+
+The tests use synthetic images and mock the ML calls, so they need no model weights or network access.
 
 Backend default development URL:
 - `http://127.0.0.1:8000`
@@ -286,7 +305,7 @@ Not yet implemented:
 ## Known Risks and Caveats
 
 - Upload pipeline is synchronous (blocks request while running ML inference).
-- Confidence threshold is hardcoded at `0.95` in upload view.
+- The face confidence threshold is a constant (`MIN_FACE_CONFIDENCE = 0.95` in `ml/detect_faces.py`), not a setting.
 - Clustering may leave valid faces unassigned (`person=None`) if insufficient similar samples exist yet.
 - No authentication/authorization; all endpoints are open.
 - `SECRET_KEY`, `DEBUG`, DB credentials, and CORS are now environment-driven (see `.env.example`) but the shipped defaults are still dev-oriented — set real values via `.env` before deploying.

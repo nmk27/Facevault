@@ -1,5 +1,6 @@
 import { MOCK_FACES_BY_PHOTO, MOCK_PEOPLE, MOCK_PHOTOS, getMockPaged } from '../data/mockData'
 import type { FaceBox, Paginated, Person, Photo } from '../types'
+import { photoTime } from '../utils'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.trim() || 'http://127.0.0.1:8000'
 const ENABLE_MOCKS = import.meta.env.VITE_ENABLE_MOCKS === 'true'
@@ -15,6 +16,7 @@ type BackendPhoto = {
     thumbnail: string | null
     width: number | null
     height: number | null
+    taken_at: string | null
     uploaded_at: string
 }
 
@@ -32,6 +34,8 @@ type BackendFace = {
         id: number
         image: string | null
         thumbnail: string | null
+        taken_at?: string | null
+        uploaded_at?: string
     }
     face_image?: string | null
 }
@@ -63,6 +67,7 @@ function mapBackendPhoto(photo: BackendPhoto): Photo {
         thumbnailUrl: toAbsoluteMediaUrl(photo.thumbnail ?? photo.image),
         title: `Photo ${photo.id}`,
         createdAt: photo.uploaded_at,
+        takenAt: photo.taken_at ?? undefined,
         width: photo.width ?? undefined,
         height: photo.height ?? undefined,
     }
@@ -144,31 +149,14 @@ export async function getPhotoById(photoId: string): Promise<Photo | null> {
         return MOCK_PHOTOS.find((photo) => photo.id === photoId) ?? null
     }
 
-    try {
-        let page = 1
-        while (page <= 100) {
-            const result = await requestJson<{ results: BackendPhoto[]; next: string | null }>(
-                `/photos/?page=${page}`,
-            )
-
-            const found = result.results.find((photo) => String(photo.id) === photoId)
-            if (found) {
-                return mapBackendPhoto(found)
-            }
-
-            if (!result.next) {
-                break
-            }
-            page += 1
-        }
-
+    const response = await fetch(`${API_BASE_URL}/photos/${encodeURIComponent(photoId)}/`)
+    if (response.status === 404) {
         return null
-    } catch {
-        if (useMocks()) {
-            return MOCK_PHOTOS.find((photo) => photo.id === photoId) ?? null
-        }
+    }
+    if (!response.ok) {
         throw new Error('Failed to fetch photo from backend')
     }
+    return mapBackendPhoto((await response.json()) as BackendPhoto)
 }
 
 export async function uploadPhotos(
@@ -342,7 +330,8 @@ export async function getPerson(personId: string): Promise<{ person: Person; pho
             url: toAbsoluteMediaUrl(backendPhoto.image),
             thumbnailUrl: toAbsoluteMediaUrl(backendPhoto.thumbnail ?? backendPhoto.image),
             title: `Photo ${backendPhoto.id}`,
-            createdAt: face.created_at ?? '',
+            createdAt: backendPhoto.uploaded_at ?? face.created_at ?? '',
+            takenAt: backendPhoto.taken_at ?? undefined,
         }
 
         const existing = photoMap.get(mapped.id)
@@ -351,21 +340,21 @@ export async function getPerson(personId: string): Promise<{ person: Person; pho
         }
     })
 
+    const photosInApiOrder = Array.from(photoMap.values())
+
     const person: Person = {
         id: String(detail.person.id),
         name: detail.person.name,
         faceCount: detail.person.face_count,
         averageConfidence: confidenceCount ? confidenceTotal / confidenceCount : 0,
-        coverUrl: photoMap.values().next().value?.thumbnailUrl ?? '',
-        sampleImageUrls: Array.from(photoMap.values())
-            .slice(0, 4)
-            .map((photo) => photo.thumbnailUrl),
+        coverUrl: photosInApiOrder[0]?.thumbnailUrl ?? '',
+        sampleImageUrls: photosInApiOrder.slice(0, 4).map((photo) => photo.thumbnailUrl),
     }
 
-    return {
-        person,
-        photos: Array.from(photoMap.values()),
-    }
+    // The API lists faces in id order; show the person's photos newest first like the gallery.
+    const photos = [...photosInApiOrder].sort((a, b) => photoTime(b) - photoTime(a))
+
+    return { person, photos }
 }
 
 export async function renamePerson(personId: string, name: string): Promise<Person> {

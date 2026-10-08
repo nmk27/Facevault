@@ -1,19 +1,20 @@
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.generics import ListAPIView
+from rest_framework.generics import ListAPIView, RetrieveAPIView
 import logging
 
 from faces.models import Face
-from ml.detect_faces import detect_faces
+from ml.detect_faces import MIN_FACE_CONFIDENCE, detect_faces
 from ml.cluster_faces import cluster_faces
+from ml.image_utils import crop_face, open_oriented
 
 from .models import Photo
 from .serializers import PhotoSerializer
 
-from PIL import Image
 import io
 from django.core.files.base import ContentFile
+from django.db.models.functions import Coalesce
 
 from ml.generate_embeddings import generate_embedding
 
@@ -43,20 +44,18 @@ def upload_photo(request):
     if serializer.is_valid():
         serializer.save()
 
-        # Run face detection after saving the photo
-        faces = detect_faces(serializer.instance.image.path)
-        image = Image.open(serializer.instance.image.path)
+        # Detect and crop on the oriented image so boxes match what the browser displays.
+        image = open_oriented(serializer.instance.image.path)
+        faces = detect_faces(image)
 
         for face in faces:
             x, y, width, height = face["box"]
             confidence = face["confidence"]
 
-            if confidence < 0.95:
+            if confidence < MIN_FACE_CONFIDENCE:
                 continue
 
-            x = max(0, x)
-            y = max(0, y)
-            cropped_face = image.crop((x, y, x + width, y + height))
+            x, y, cropped_face = crop_face(image, (x, y, width, height))
 
             buffer = io.BytesIO()
             cropped_face.save(buffer, format='JPEG')
@@ -87,5 +86,13 @@ def upload_photo(request):
 
 
 class PhotoListView(ListAPIView):
-    queryset = Photo.objects.all().order_by('-uploaded_at')
+    # Newest capture date first; photos without an EXIF date fall back to upload time.
+    queryset = Photo.objects.annotate(
+        sort_date=Coalesce('taken_at', 'uploaded_at')
+    ).order_by('-sort_date', '-id')
+    serializer_class = PhotoSerializer
+
+
+class PhotoDetailView(RetrieveAPIView):
+    queryset = Photo.objects.all()
     serializer_class = PhotoSerializer

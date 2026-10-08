@@ -1,16 +1,33 @@
+from functools import lru_cache
+
 from PIL import Image
 from facenet_pytorch import MTCNN
 import os
+
+from ml.image_utils import open_oriented
+
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
+# Detections below this confidence are ignored by the upload view and the evaluation.
+MIN_FACE_CONFIDENCE = 0.95
 
-detector = MTCNN()
 
-def detect_faces(image_path):
-    image = Image.open(image_path).convert("RGB")
+@lru_cache(maxsize=1)
+def _detector():
+    # Loaded on first use so importing this module (e.g. in tests) stays cheap.
+    return MTCNN()
 
-    boxes, probs = detector.detect(image)
+
+def detect_faces(image):
+    """Detect faces in a PIL image, or in an image path (opened with EXIF orientation applied).
+
+    Boxes are in the pixel space of the image as displayed to the user.
+    """
+    if not isinstance(image, Image.Image):
+        image = open_oriented(image)
+
+    boxes, probs = _detector().detect(image.convert("RGB"))
     if boxes is None or probs is None:
         return []
 
