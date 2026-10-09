@@ -368,3 +368,5 @@ poetry.toml
 pyrightconfig.json
 
 # End of https://www.toptal.com/developers/gitignore/api/python,django,flutter
+# Evaluation: cached embeddings (re-creatable, can be large)
+backend/evaluation/cache/

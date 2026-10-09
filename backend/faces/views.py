@@ -71,6 +71,8 @@ def get_person_faces(request, person_id):
                 'id': face.photo.id,
                 'image': face.photo.image.url if face.photo.image else None,
                 'thumbnail': face.photo.thumbnail.url if face.photo.thumbnail else None,
+                'taken_at': face.photo.taken_at.isoformat() if face.photo.taken_at else None,
+                'uploaded_at': face.photo.uploaded_at.isoformat(),
             },
             'x': face.x,
             'y': face.y,

@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ChevronLeft, ChevronRight, X } from 'lucide-react'
 import type { FaceBox, Photo } from '../../types'
 import { FaceOverlay } from './FaceOverlay'
 import { SmartImage } from '../shared/SmartImage'
+import { formatPhotoDate } from '../../utils'
 
 type PhotoViewerProps = {
     photo: Photo
@@ -16,13 +17,6 @@ export function PhotoViewer({ photo, faces, onClose, onPrev, onNext }: PhotoView
     const [renderedSize, setRenderedSize] = useState({ width: 0, height: 0 })
     const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0 })
     const faceCount = faces.length
-
-    const isHeicLike = useMemo(() => {
-        const value = photo.url.toLowerCase()
-        return value.includes('.heic') || value.includes('.heif')
-    }, [photo.url])
-
-    const displaySrc = isHeicLike && photo.thumbnailUrl ? photo.thumbnailUrl : photo.url
 
     useEffect(() => {
         function handleKeyDown(event: KeyboardEvent) {
@@ -52,7 +46,7 @@ export function PhotoViewer({ photo, faces, onClose, onPrev, onNext }: PhotoView
                 </button>
 
                 <div className="flex items-center gap-2 text-xs font-medium text-white/70">
-                    <span>{new Date(photo.createdAt).toLocaleString()}</span>
+                    <span>{formatPhotoDate(photo)}</span>
                     {photo.width && photo.height && (
                         <span className="hidden sm:inline">
                             · {photo.width}×{photo.height}
@@ -81,7 +75,7 @@ export function PhotoViewer({ photo, faces, onClose, onPrev, onNext }: PhotoView
                     style={{ width: renderedSize.width || undefined, height: renderedSize.height || undefined }}
                 >
                     <SmartImage
-                        src={displaySrc}
+                        src={photo.url}
                         fallbackSrc={photo.thumbnailUrl || photo.url}
                         alt="Photo"
                         className="block max-h-[calc(100svh-96px)] max-w-full"

@@ -3,7 +3,10 @@ export type Photo = {
     url: string
     thumbnailUrl: string
     title: string
+    /** Upload time (true UTC). */
     createdAt: string
+    /** Camera capture time from EXIF: wall-clock time labelled UTC, so read it with UTC getters. */
+    takenAt?: string
     width?: number
     height?: number
 }
